@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import math
 import random
 import sys
 
@@ -191,82 +192,127 @@ class Player:
     def demand(self, index, board, evaluated):
         return False
 
+    def pick(self, indices, auxiliary = None):
+        orders = [ ]
+        cards = [ ]
+        hand = self.hand[:]
+
+        for index in indices:
+            name = Points.nameOf(index)
+            order = Player.indexOf(hand, None, index)
+            card = Player.cardOf(hand, None, index)
+            if order < 0 or card == None:
+                return ( None, None )
+
+            orders.append(order)
+            cards.append(card)
+            hand[order] = None
+
+        if auxiliary != None:
+            for aux in auxiliary:
+                pass
+
+                # TODO
+
+        Utils.debug('Picking orders: ' + str(orders) + ' of indices ' + str(indices))
+
+        return ( orders, cards )
+
     def search(self, index, board):
         valid = [ ]
-        hand = board.stack[-1].hand
-        piles = [ ]
+
+        p = None
+        handPiles = [ ]
+        for c in self.hand:
+            if p == None:
+                p = Pile()
+                handPiles.append(p)
+            q = p.counts(c)
+            if isinstance(q, Pile):
+                p = q
+                handPiles.append(p)
+        handPiles.sort()
+
+        p = None
+        putPiles = [ ]
         for c in board.stack[-1].cards:
-            p = Pile()
-            p.counts(c)
-            piles.append(p)
+            if p == None:
+                p = Pile()
+                putPiles.append(p)
+            q = p.counts(c)
+            if isinstance(q, Pile):
+                p = q
+                putPiles.append(p)
+        putPiles.sort()
+
+        hand = board.stack[-1].hand
 
         if hand == Pattern.Invalid:
-            valid += Pattern.some(self, index, board, piles, Pattern.Single)
-            valid += Pattern.some(self, index, board, piles, Pattern.Double)
-            valid += Pattern.some(self, index, board, piles, Pattern.Triple)
-            valid += Pattern.some(self, index, board, piles, Pattern.Triple_1)
-            valid += Pattern.some(self, index, board, piles, Pattern.Triple_2)
-            valid += Pattern.some(self, index, board, piles, Pattern.Quadruple)
-            valid += Pattern.some(self, index, board, piles, Pattern.Quadruple_1_1)
-            valid += Pattern.some(self, index, board, piles, Pattern.Quadruple_2_2)
-            valid += Pattern.some(self, index, board, piles, Pattern.Straight)
-            valid += Pattern.some(self, index, board, piles, Pattern.Straight_x2)
-            valid += Pattern.some(self, index, board, piles, Pattern.Straight_x3)
-            valid += Pattern.some(self, index, board, piles, Pattern.Straight_x3_n)
-            valid += Pattern.some(self, index, board, piles, Pattern.Straight_x3_2n)
-            valid += Pattern.quadruple(self, index, board, piles)
-            valid += Pattern.jokers(self, index, board, piles)
+            valid += Pattern.some(board, self, index, handPiles, putPiles, Pattern.Straight_x3_2n)
+            valid += Pattern.some(board, self, index, handPiles, putPiles, Pattern.Straight_x3_n)
+            valid += Pattern.some(board, self, index, handPiles, putPiles, Pattern.Straight_x3)
+            valid += Pattern.some(board, self, index, handPiles, putPiles, Pattern.Straight_x2)
+            valid += Pattern.some(board, self, index, handPiles, putPiles, Pattern.Straight)
+            valid += Pattern.some(board, self, index, handPiles, putPiles, Pattern.Quadruple_2_2)
+            valid += Pattern.some(board, self, index, handPiles, putPiles, Pattern.Quadruple_1_1)
+            valid += Pattern.some(board, self, index, handPiles, putPiles, Pattern.Triple_2)
+            valid += Pattern.some(board, self, index, handPiles, putPiles, Pattern.Triple_1)
+            valid += Pattern.some(board, self, index, handPiles, putPiles, Pattern.Triple)
+            valid += Pattern.some(board, self, index, handPiles, putPiles, Pattern.Double)
+            valid += Pattern.some(board, self, index, handPiles, putPiles, Pattern.Single)
+            valid += Pattern.quadruple(board, self, index, handPiles, putPiles)
+            valid += Pattern.jokers(board, self, index, handPiles, putPiles)
         elif hand == Pattern.Single:
-            valid += Pattern.some(self, index, board, piles, Pattern.Single)
-            valid += Pattern.quadruple(self, index, board, piles)
-            valid += Pattern.jokers(self, index, board, piles)
+            valid += Pattern.some(board, self, index, handPiles, putPiles, Pattern.Single)
+            valid += Pattern.quadruple(board, self, index, handPiles, putPiles)
+            valid += Pattern.jokers(board, self, index, handPiles, putPiles)
         elif hand == Pattern.Double:
-            valid += Pattern.some(self, index, board, piles, Pattern.Double)
-            valid += Pattern.quadruple(self, index, board, piles)
-            valid += Pattern.jokers(self, index, board, piles)
+            valid += Pattern.some(board, self, index, handPiles, putPiles, Pattern.Double)
+            valid += Pattern.quadruple(board, self, index, handPiles, putPiles)
+            valid += Pattern.jokers(board, self, index, handPiles, putPiles)
         elif hand == Pattern.Triple:
-            valid += Pattern.some(self, index, board, piles, Pattern.Triple)
-            valid += Pattern.quadruple(self, index, board, piles)
-            valid += Pattern.jokers(self, index, board, piles)
+            valid += Pattern.some(board, self, index, handPiles, putPiles, Pattern.Triple)
+            valid += Pattern.quadruple(board, self, index, handPiles, putPiles)
+            valid += Pattern.jokers(board, self, index, handPiles, putPiles)
         elif hand == Pattern.Triple_1:
-            valid += Pattern.some(self, index, board, piles, Pattern.Triple_1)
-            valid += Pattern.quadruple(self, index, board, piles)
-            valid += Pattern.jokers(self, index, board, piles)
+            valid += Pattern.some(board, self, index, handPiles, putPiles, Pattern.Triple_1)
+            valid += Pattern.quadruple(board, self, index, handPiles, putPiles)
+            valid += Pattern.jokers(board, self, index, handPiles, putPiles)
         elif hand == Pattern.Triple_2:
-            valid += Pattern.some(self, index, board, piles, Pattern.Triple_2)
-            valid += Pattern.quadruple(self, index, board, piles)
-            valid += Pattern.jokers(self, index, board, piles)
+            valid += Pattern.some(board, self, index, handPiles, putPiles, Pattern.Triple_2)
+            valid += Pattern.quadruple(board, self, index, handPiles, putPiles)
+            valid += Pattern.jokers(board, self, index, handPiles, putPiles)
         elif hand == Pattern.Quadruple:
-            valid += Pattern.quadruple(self, index, board, piles)
-            valid += Pattern.jokers(self, index, board, piles)
+            valid += Pattern.quadruple(board, self, index, handPiles, putPiles)
+            valid += Pattern.jokers(board, self, index, handPiles, putPiles)
         elif hand == Pattern.Quadruple_1_1:
-            valid += Pattern.some(self, index, board, piles, Pattern.Quadruple_1_1)
-            valid += Pattern.quadruple(self, index, board, piles)
-            valid += Pattern.jokers(self, index, board, piles)
+            valid += Pattern.some(board, self, index, handPiles, putPiles, Pattern.Quadruple_1_1)
+            valid += Pattern.quadruple(board, self, index, handPiles, putPiles)
+            valid += Pattern.jokers(board, self, index, handPiles, putPiles)
         elif hand == Pattern.Quadruple_2_2:
-            valid += Pattern.some(self, index, board, piles, Pattern.Quadruple_2_2)
-            valid += Pattern.quadruple(self, index, board, piles)
-            valid += Pattern.jokers(self, index, board, piles)
+            valid += Pattern.some(board, self, index, handPiles, putPiles, Pattern.Quadruple_2_2)
+            valid += Pattern.quadruple(board, self, index, handPiles, putPiles)
+            valid += Pattern.jokers(board, self, index, handPiles, putPiles)
         elif hand == Pattern.Straight:
-            valid += Pattern.some(self, index, board, piles, Pattern.Straight)
-            valid += Pattern.quadruple(self, index, board, piles)
-            valid += Pattern.jokers(self, index, board, piles)
+            valid += Pattern.some(board, self, index, handPiles, putPiles, Pattern.Straight)
+            valid += Pattern.quadruple(board, self, index, handPiles, putPiles)
+            valid += Pattern.jokers(board, self, index, handPiles, putPiles)
         elif hand == Pattern.Straight_x2:
-            valid += Pattern.some(self, index, board, piles, Pattern.Straight_x2)
-            valid += Pattern.quadruple(self, index, board, piles)
-            valid += Pattern.jokers(self, index, board, piles)
+            valid += Pattern.some(board, self, index, handPiles, putPiles, Pattern.Straight_x2)
+            valid += Pattern.quadruple(board, self, index, handPiles, putPiles)
+            valid += Pattern.jokers(board, self, index, handPiles, putPiles)
         elif hand == Pattern.Straight_x3:
-            valid += Pattern.some(self, index, board, piles, Pattern.Straight_x3)
-            valid += Pattern.quadruple(self, index, board, piles)
-            valid += Pattern.jokers(self, index, board, piles)
+            valid += Pattern.some(board, self, index, handPiles, putPiles, Pattern.Straight_x3)
+            valid += Pattern.quadruple(board, self, index, handPiles, putPiles)
+            valid += Pattern.jokers(board, self, index, handPiles, putPiles)
         elif hand == Pattern.Straight_x3_n:
-            valid += Pattern.some(self, index, board, piles, Pattern.Straight_x3_n)
-            valid += Pattern.quadruple(self, index, board, piles)
-            valid += Pattern.jokers(self, index, board, piles)
+            valid += Pattern.some(board, self, index, handPiles, putPiles, Pattern.Straight_x3_n)
+            valid += Pattern.quadruple(board, self, index, handPiles, putPiles)
+            valid += Pattern.jokers(board, self, index, handPiles, putPiles)
         elif hand == Pattern.Straight_x3_2n:
-            valid += Pattern.some(self, index, board, piles, Pattern.Straight_x3_2n)
-            valid += Pattern.quadruple(self, index, board, piles)
-            valid += Pattern.jokers(self, index, board, piles)
+            valid += Pattern.some(board, self, index, handPiles, putPiles, Pattern.Straight_x3_2n)
+            valid += Pattern.quadruple(board, self, index, handPiles, putPiles)
+            valid += Pattern.jokers(board, self, index, handPiles, putPiles)
         elif hand == Pattern.Jokers:
             pass
 
@@ -279,22 +325,8 @@ class Player:
         n = board.reader.turn(('CPU\'s' if self.isCpu else 'YOUr') + '@' + str(index))
         n = list(filter(lambda s: len(s) > 0, n.split(' ')))
 
-        orders = [ ]
-        cards = [ ]
-        hand = self.hand[:]
-
-        for name in n:
-            index = Points.indexFromName(name)
-            order = Player.indexOf(hand, None, index)
-            card = Player.cardOf(hand, None, index)
-            if order < 0 or card == None:
-                print('Invalid put:', name)
-
-                return False
-
-            orders.append(order)
-            cards.append(card)
-            hand[order] = None
+        indices = list(map(lambda name: Points.indexFromName(name), n))
+        ( orders, cards ) = self.pick(indices)
 
         put[0] = orders
         put[1] = cards
@@ -444,18 +476,19 @@ class Pattern:
 
         return 1
 
-    def straight(piles):
+    def straight(piles, count = None):
         ret = 0
         if len(piles) == 0:
             return ret
 
         ret = 1
-        n = piles[0].count
+        n = count if count != None else piles[0].count
         v = piles[0].index
         for i in range(1, len(piles)):
             p = piles[i]
             if p.count != n or p.index != v + 1:
                 return ret
+
             v += 1
             ret += 1
 
@@ -471,6 +504,7 @@ class Pattern:
         for p in piles:
             if p.count != n:
                 return ret
+
             ret += 1
 
         return ret
@@ -485,9 +519,18 @@ class Pattern:
         for p in piles:
             if p.count != n:
                 return ret
+
             ret += 1
 
         return ret
+
+    def firstIndexOf(piles, pred, card):
+        for i in range(len(piles)):
+            pile = piles[i]
+            if pred(pile, card):
+                return i
+
+        return -1
 
     def handOf(cards):
         hand = Pattern.Invalid
@@ -506,12 +549,12 @@ class Pattern:
         def count(pile):
             return pile.count
 
-        def match(piles, what, counts):
-            if len(piles) != len(counts):
+        def match(piles, what, how):
+            if len(piles) != len(how):
                 return False
 
             for i in range(len(piles)):
-                if what(piles[i]) != counts[i]:
+                if what(piles[i]) != how[i]:
                     return False
 
             return True
@@ -633,17 +676,31 @@ class Pattern:
 
         return ( hand, rel, times )
 
-    def quadruple(player, index, board, piles):
+    def quadruple(board, player, index, handPiles, putPiles):
+        indexIsGeq = lambda p, c: p.index >= c.index
+
+        start = 0
+        if len(board.stack[-1].cards) > 0 and board.stack[-1].hand == Pattern.Quadruple:
+            start = Pattern.firstIndexOf(handPiles, indexIsGeq, board.stack[-1].cards[0])
+            if start == -1:
+                start = 0
+
+        possibilities = [ ]
+        for i in range(start, len(handPiles)):
+            pile = handPiles[i]
+            if pile.count < 4:
+                continue
+
+            indices = [ pile.index ] * 4
+            ( _1, cards ) = player.pick(indices)
+            score = 0 # TODO
+
+            possibilities.append(( cards, score ))
+
+        return possibilities
+
+    def jokers(board, player, index, handPiles, putPiles):
         cards = [ ]
-        score = 0
-
-        # TODO
-
-        return [ ( cards, score ) ]
-
-    def jokers(player, index, board, piles):
-        cards = [ ]
-        score = 0
         index = Points.indexFromName(':)')
         card0 = Player.cardOf(player.hand, None, index)
         index = Points.indexFromName(':D')
@@ -651,18 +708,125 @@ class Pattern:
         if card0 != None and card1 != None:
             cards.append(card0)
             cards.append(card1)
-
-        # TODO
-
-        return [ ( cards, score ) ]
-
-    def some(player, index, board, piles, hand):
-        cards = [ ]
-        score = 0
-
-        # TODO
+        score = 0 # TODO
 
         return [ ( cards, score ) ]
+
+    def some(board, player, index, handPiles, putPiles, hand):
+        if hand == Pattern.Quadruple:
+            return Pattern.quadruple(board, player, index, handPiles, putPiles)
+        elif hand == Pattern.Jokers:
+            return Pattern.jokers(board, player, index, handPiles, putPiles)
+
+        indexIsGeq = lambda p, c: p.index >= c.index
+        indexIsAny = lambda _1, _2: True
+
+        start = 0
+        if len(board.stack[-1].cards) > 0:
+            indexIs = indexIsGeq if board.stack[-1].hand == hand else indexIsAny
+            start = Pattern.firstIndexOf(handPiles, indexIs, board.stack[-1].cards[0])
+            if start < 0:
+                start = 0
+
+        pointed = 0
+        straight = None
+        auxiliary = None
+        if hand == Pattern.Single:
+            pointed = 1
+        elif hand == Pattern.Double:
+            pointed = 2
+        elif hand == Pattern.Triple:
+            pointed = 3
+        elif hand == Pattern.Triple_1:
+            pointed = 3
+            auxiliary = [ 1 ]
+        elif hand == Pattern.Triple_2:
+            pointed = 3
+            auxiliary = [ 2 ]
+        elif hand == Pattern.Quadruple_1_1:
+            pointed = 4
+            auxiliary = [ 1, 1 ]
+        elif hand == Pattern.Quadruple_2_2:
+            pointed = 4
+            auxiliary = [ 2, 2 ]
+        elif hand == Pattern.Straight:
+            pointed = 1
+            if board.stack[-1].hand == hand:
+                straight = len(board.stack[-1].cards)
+            else:
+                straight = 5
+                if len(handPiles) > straight:
+                    straight = range(len(handPiles), straight, -1)
+        elif hand == Pattern.Straight_x2:
+            pointed = 2
+            if board.stack[-1].hand == hand:
+                straight = len(board.stack[-1].cards) / 2
+            else:
+                straight = 3
+                s = len(handPiles)
+                if s > straight:
+                    straight = range(s, straight, -1)
+        elif hand == Pattern.Straight_x3:
+            pointed = 3
+            if board.stack[-1].hand == hand:
+                straight = len(board.stack[-1].cards) / 3
+            else:
+                straight = 3
+                s = len(handPiles)
+                if s > straight:
+                    straight = range(s, straight, -1)
+        elif hand == Pattern.Straight_x3_n:
+            pointed = 3
+            if board.stack[-1].hand == hand:
+                straight = len(board.stack[-1].cards) / 4
+                auxiliary = [ 1 ] * len(board.stack[-1].cards) / 4
+            else:
+                straight = 3
+                s = int(math.ceil(len(handPiles) * (3 / 4)))
+                if s > straight:
+                    straight = range(s, straight, -1)
+        elif hand == Pattern.Straight_x3_2n:
+            pointed = 3
+            if board.stack[-1].hand == hand:
+                straight = len(board.stack[-1].cards) / 5
+                auxiliary = [ 2 ] * len(board.stack[-1].cards) / 5
+            else:
+                straight = 3
+                s = int(math.ceil(len(handPiles) * (4 / 5)))
+                if s > straight:
+                    straight = range(s, straight, -1)
+
+        def pick(possibilities, player, indices, auxiliary):
+            ( _1, cards ) = player.pick(indices, auxiliary)
+            score = 0 # TODO
+
+            possibilities.append(( cards, score ))
+
+        possibilities = [ ]
+        for i in range(start, len(handPiles)):
+            pile = handPiles[i]
+            if pile.count < pointed:
+                continue
+
+            if straight == None:
+                indices = [ pile.index ] * pointed
+
+                pick(possibilities, player, indices, auxiliary)
+            elif isinstance(straight, int):
+                indices = [ ]
+                for j in range(0, straight):
+                    indices += [ pile.index + j ] * pointed
+
+                pick(possibilities, player, indices, auxiliary)
+            elif isinstance(straight, range):
+                for k in straight:
+                    indices = [ ]
+                    for j in range(0, k):
+                        indices += [ pile.index + j ] * pointed
+
+                    pick(possibilities, player, indices, auxiliary)
+
+        return possibilities
 
 class Reader:
     def __init__(self, start = None, demand = None, turn = None):
