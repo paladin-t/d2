@@ -1,9 +1,23 @@
 #!/usr/bin/env python
-
+# -*- coding: utf-8 -*-
+#
 # A Python implementaton of the Dou Dizhu deck game
 #
-# License: GPL v3
 # Copyright 2019 Tony
+#
+# License: GPLv3
+# This program is free software: you can redistribute it and/or
+# modify it under the terms of the GNU General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 import math
 import random
@@ -139,7 +153,7 @@ class Card:
 
     def __init__(self, s, i):
         self.suit = s
-        self.index = i
+        self.index = i # Starts from 1.
 
     def __str__(self):
         return Points.nameOf(self.index) + Suits.nameOf(self.suit)
@@ -162,6 +176,8 @@ class Player:
         self.demanding = 0
 
         self.score = 100
+
+        self.wait = None
 
     def clear(self):
         self.isLandLord = False
@@ -363,6 +379,9 @@ class Cpu(Player):
         self.isCpu = True
 
     def demand(self, index, board, evaluated):
+        if self.wait != None and not self.wait.demanding():
+            return False
+
         d = [ n for n, v in enumerate(evaluated) if v[1] == index ][0]
         d += 1
         if d == 2:
@@ -372,6 +391,9 @@ class Cpu(Player):
         return True
 
     def think(self, index, board, put):
+        if self.wait != None and not self.wait.thinking():
+            return False
+
         handed = board.stack[-1].handed(index)
         whose = None if board.stack[-1].owner == None else board.players[board.stack[-1].owner]
         friendly = not self.isLandLord and (whose != None and not whose.isLandLord)
@@ -401,14 +423,14 @@ class Cpu(Player):
         return True
 
 class You(Player):
-    def __init__(self, reader, writer):
+    def __init__(self):
         Player.__init__(self)
 
-        self.reader = reader
-        self.writer = writer
-
     def demand(self, index, board, evaluated):
-        d = self.reader.demand()
+        if self.wait != None and not self.wait.demanding():
+            return False
+
+        d = board.reader.demand()
         if d == None:
             d = 0
         else:
@@ -425,6 +447,9 @@ class You(Player):
         return True
 
     def think(self, index, board, put):
+        if self.wait != None and not self.wait.thinking():
+            return False
+
         handed = board.stack[-1].handed(index)
         mine = board.stack[-1].owner == index
 
@@ -887,7 +912,7 @@ class Pattern:
             pointed = 3
             if handed == hand:
                 straight = len(board.stack[-1].cards) / 4
-                auxiliary = [ 1 ] * len(board.stack[-1].cards) / 4
+                auxiliary = [ 1 ] * (len(board.stack[-1].cards) / 4)
             else:
                 straight = 2
                 s = int(math.ceil(len(holding) * (3 / 4)))
@@ -899,7 +924,7 @@ class Pattern:
             pointed = 3
             if handed == hand:
                 straight = len(board.stack[-1].cards) / 5
-                auxiliary = [ 2 ] * len(board.stack[-1].cards) / 5
+                auxiliary = [ 2 ] * (len(board.stack[-1].cards) / 5)
             else:
                 straight = 2
                 s = int(math.ceil(len(holding) * (4 / 5)))
@@ -1012,7 +1037,7 @@ class Board:
         self.times = 1
 
         self.players = [ ]
-        self.players.append(You(self.reader, self.writer))
+        self.players.append(You())
         self.players.append(Cpu())
         self.players.append(Cpu())
 
@@ -1191,9 +1216,32 @@ class Board:
     def checkGameover(self):
         for i in range(len(self.players)):
             p = self.players[i]
-            if len(p.hand) == 0:
+            if len(p.hand) > 0:
+                continue
+
+            self.lastWinner = i
+
+            if p.isLandLord:
                 self.state = -1 if p.isCpu else 1
-                self.lastWinner = i
+
+                return True
+            else:
+                if not p.isCpu:
+                    self.state = 1
+
+                    return True
+
+                for j in range(len(self.players)):
+                    if i == j:
+                        continue
+
+                    q = self.players[j]
+                    if q.isLandLord:
+                        continue
+
+                    self.state = -1 if q.isCpu else 1
+
+                    break
 
                 return True
 
@@ -1201,11 +1249,11 @@ class Board:
 
     def play(self):
         while True:
-            self.writer.splitter()
-
-            board.output()
-
             if self.state == None:
+                self.writer.splitter()
+
+                board.output()
+
                 for y in self.askStart():
                     yield y
             elif self.state == 1:
@@ -1221,6 +1269,10 @@ class Board:
 
                 yield False
             elif self.state == 0:
+                self.writer.splitter()
+
+                board.output()
+
                 ll = -1
                 for i in range(len(self.players)):
                     if self.players[i].isLandLord:
@@ -1264,6 +1316,8 @@ class Board:
             else:
                 raise Exception('Unknown state')
 
+            yield True
+
     def output(self, players = True, stack = True, reserved = True):
         if reserved:
             print('[Reserved]' + ' - x' + str(self.times) + ' times')
@@ -1291,26 +1345,45 @@ class Board:
                 else:
                     print(msg)
 
+class Instantly:
+    def __init__(self):
+        pass
+
+    def demanding(self):
+        return True
+
+    def thinking(self):
+        return True
+
 # Variables.
 
 board = Board(Reader(), Writer())
 
 # Entries.
 
-def __init__():
-    pass
+if Utils.isSkulpt:
+    #import game
 
-def __update__(delta):
-    pass
+    def __init__():
+        pass
+
+    def __update__(delta):
+        pass
 
 def main():
     while True:
+        for p in board.players:
+            p.wait = Instantly()
+
         board.shuffle()
         board.deal()
+
         p = board.play()
         while next(p):
             pass
+
         board.clear()
 
 if __name__ == '__main__':
-    main()
+    if Utils.isCPython:
+        main()
