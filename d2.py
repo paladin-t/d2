@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 #
 # A Python implementaton of the Dou Dizhu deck game
-#
+# GitHub: https://github.com/paladin-t/d2
 # Copyright 2019 Tony
 #
 # License: GPLv3
