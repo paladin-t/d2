@@ -1,5 +1,10 @@
 #!/usr/bin/env python
 
+# A Python implementaton of the Dou Dizhu deck game
+#
+# License: GPL v3
+# Copyright 2019 Tony
+
 import math
 import random
 import sys
@@ -100,12 +105,15 @@ class Points:
 
         return 0
 
-    def indexFromName(n):
+    def nameToIndex(n):
         n = n.upper()
         if n == ':)':
             return 13 + 1
         elif n == ':D':
             return 14 + 1
+
+        if not n in Points.Names:
+            return -1
 
         i = Points.Names.index(n)
         if i >= 0:
@@ -114,6 +122,21 @@ class Points:
         return i
 
 class Card:
+    def namesOf(cards):
+        if cards == None or len(cards) == 0:
+            return '[]'
+
+        msg = '['
+        for i in range(len(cards)):
+            c = cards[i]
+            msg += str(c)
+            if i == len(cards) - 1:
+                msg += ']'
+            else:
+                msg += ', '
+
+        return msg
+
     def __init__(self, s, i):
         self.suit = s
         self.index = i
@@ -141,7 +164,11 @@ class Player:
         self.score = 100
 
     def clear(self):
+        self.isLandLord = False
+
         del self.hand[:]
+
+        self.demanding = 0
 
         return self
 
@@ -169,7 +196,7 @@ class Player:
         return False
 
     def pick(self, indices, auxiliary = None, cond = None):
-        def pick(index, orders, cards, hand):
+        def pick(index, orders, cards, hand, cond):
             order = Pattern.indexOf(hand, None, index)
             card = Pattern.cardOf(hand, None, index)
             if order < 0 or card == None:
@@ -188,8 +215,8 @@ class Player:
         hand = self.hand[:]
 
         for index in indices:
-            if not pick(index, orders, cards, hand):
-                return ( None, None )
+            if not pick(index, orders, cards, hand, cond):
+                return ( None, None, None )
 
         if auxiliary != None:
             piles = Pile.of(hand, False)
@@ -201,13 +228,13 @@ class Player:
                         continue
 
                     for j in range(aux):
-                        pick(pile.index, orders, cards, hand)
+                        pick(pile.index, orders, cards, hand, None)
                     del piles[i]
                     got = True
 
                     break
                 if not got:
-                    return ( None, None )
+                    return ( None, None, None )
             indices = indices[:]
             for i in range(len(auxiliary)):
                 aux = auxiliary[i]
@@ -216,14 +243,19 @@ class Player:
                     v += '*' + str(aux)
                 indices.append(v)
 
-        Utils.debug('Picking orders: ' + str(orders) + ' of indices ' + str(indices))
+        piles = Pile.of(cards)
+        cards.sort(key = lambda card: Pattern.firstIndexOf(piles, lambda p, c: p.index == c.index, card))
 
-        return ( orders, cards )
+        msg = 'Picking cards: ' + Card.namesOf(cards) + ' of indices ' + str(indices)
+        Utils.debug(msg)
 
-    def search(self, index, board):
+        hand = list(filter(lambda c: c != None, hand))
+
+        return ( orders, cards, hand )
+
+    def search(self, index, board, hand):
         valid = [ ]
         holding = Pile.of(self.hand, False)
-        hand = board.stack[-1].hand
 
         if hand == Pattern.Invalid:
             valid += Pattern.pickSome(board, self, index, holding, Pattern.Straight_x3_2n)
@@ -295,16 +327,22 @@ class Player:
             pass
 
         valid = list(filter(lambda v: v != None, valid))
-        valid.sort(key = lambda v: -v[1])
+        valid.sort(key = lambda v: v[2])
 
-        return valid if len(valid) > 0 else None
+        return valid
 
     def think(self, index, board, put):
         n = board.reader.turn(('CPU\'s' if self.isCpu else 'YOUr') + '@' + str(index))
+        if n == None:
+            return True
+
         n = list(filter(lambda s: len(s) > 0, n.split(' ')))
 
-        indices = list(map(lambda name: Points.indexFromName(name), n))
-        ( orders, cards ) = self.pick(indices)
+        indices = list(map(lambda name: Points.nameToIndex(name), n))
+        if -1 in indices:
+            return False
+
+        ( orders, cards, _1 ) = self.pick(indices)
 
         put[0] = orders
         put[1] = cards
@@ -334,10 +372,33 @@ class Cpu(Player):
         return True
 
     def think(self, index, board, put):
-        self.search(index, board)
-        # TODO
+        handed = board.stack[-1].handed(index)
+        whose = None if board.stack[-1].owner == None else board.players[board.stack[-1].owner]
+        friendly = not self.isLandLord and (whose != None and not whose.isLandLord)
+        hyped = len(board.stack[-1].cards) >= 4 or (whose != None and len(whose.hand) <= 2)
+        mine = board.stack[-1].owner == index
 
-        return Player.think(self, index, board, put)
+        if friendly and hyped and not mine:
+            return True
+
+        valid = self.search(index, board, handed)
+        for v in valid:
+            cards = v[1]
+            score = v[2]
+            msg = 'Considering cards: ' + Card.namesOf(cards) + ' with score ' + str(score)
+            Utils.debug(msg)
+
+        if len(valid) == 0:
+            return True
+
+        v = valid[0]
+        orders = v[0]
+        cards = v[1]
+
+        put[0] = orders
+        put[1] = cards
+
+        return True
 
 class You(Player):
     def __init__(self, reader, writer):
@@ -364,16 +425,23 @@ class You(Player):
         return True
 
     def think(self, index, board, put):
-        return Player.think(self, index, board, put)
+        handed = board.stack[-1].handed(index)
+        mine = board.stack[-1].owner == index
+
+        ret = Player.think(self, index, board, put)
+        if ret and put[0] == None and put[1] == None:
+            if handed == Pattern.Invalid or mine:
+                return False
+
+        return ret
 
 # Board.
 
 class Pile:
-    def __init__(self):
-        self.index = 0
-        self.count = 0
+    def of(cards, ordered = True):
+        cards = list(filter(lambda c: c != None, cards[:]))
+        cards.sort()
 
-    def of(cards, ordered):
         p = None
         piles = [ ]
         for c in cards:
@@ -387,10 +455,15 @@ class Pile:
             if isinstance(q, Pile):
                 p = q
                 piles.append(p)
+
         if ordered:
             piles.sort()
 
         return piles
+
+    def __init__(self):
+        self.index = 0
+        self.count = 0
 
     def __str__(self):
         return '<' + str(self.index) + ', ' + str(self.count) + '>'
@@ -465,6 +538,25 @@ class Pattern:
 
         return reduce(lambda l, r: l + r, values)
 
+    def priorityOf(cards, rest):
+        if cards == None:
+            return None
+
+        piles = Pile.of(cards)
+
+        hand = Pattern.handOf(piles)
+
+        value = Pattern.valueOf(cards)
+
+        kidding = Pattern.firstIndexOf(piles, lambda p, _1: p.index == Points.Kidding, None)
+        kidding = 0 if kidding == -1 else (piles[kidding].count * Points.valueOf(Points.Kidding))
+
+        post = len(rest) / 17 * 20000
+
+        total = (hand + value + kidding) + post
+
+        return total
+
     def cardOf(cards, suit, index):
         if len(cards) == 0:
             return None
@@ -509,6 +601,20 @@ class Pattern:
 
         return -1
 
+    def joking(piles):
+        for p in piles:
+            if p.index == Points.Joker0 or p.index == Points.Joker1:
+                return True
+
+        return False
+
+    def kidding(piles):
+        for p in piles:
+            if p.index == Points.Kidding:
+                return True
+
+        return False
+
     def handOf(piles):
         hand = Pattern.Invalid
 
@@ -524,20 +630,6 @@ class Pattern:
                     return False
 
             return True
-
-        def joking(piles):
-            for p in piles:
-                if p.index == Points.Joker0 or p.index == Points.Joker1:
-                    return True
-
-            return False
-
-        def kidding(piles):
-            for p in piles:
-                if p.index == Points.Kidding:
-                    return True
-
-            return False
 
         l = len(piles)
         if l == 0:
@@ -556,40 +648,40 @@ class Pattern:
                 assert(match(piles, count, ( 1, 1 ))), 'Impossible'
                 hand = Pattern.Jokers
             elif match(piles, count, ( 3, 1 )):
-                if not joking(piles):
+                if not Pattern.joking(piles):
                     hand = Pattern.Triple_1
             elif match(piles, count, ( 3, 2 )):
-                if not joking(piles):
+                if not Pattern.joking(piles):
                     hand = Pattern.Triple_2
         elif l == 3:
             if match(piles, count, ( 4, 1, 1 )):
-                if not joking(piles):
+                if not Pattern.joking(piles):
                     hand = Pattern.Quadruple_1_1
             elif match(piles, count, ( 4, 2, 2 )):
-                if not joking(piles):
+                if not Pattern.joking(piles):
                     hand = Pattern.Quadruple_2_2
-        if hand == Pattern.Invalid and l >= 3:
+        if hand == Pattern.Invalid and l >= 2:
             s = Pattern.expectStraight(piles)
             if piles[0].count == 1:
                 if s == l and l >= 5:
-                    if not joking(piles) and not kidding(piles):
+                    if not Pattern.joking(piles) and not Pattern.kidding(piles):
                         hand = Pattern.Straight
             elif piles[0].count == 2:
-                if s == l:
-                    if not joking(piles) and not kidding(piles):
+                if s == l and l >= 3:
+                    if not Pattern.joking(piles) and not Pattern.kidding(piles):
                         hand = Pattern.Straight_x2
             elif piles[0].count == 3:
                 if s == l:
-                    if not joking(piles) and not kidding(piles):
+                    if not Pattern.joking(piles) and not Pattern.kidding(piles):
                         hand = Pattern.Straight_x3
                 elif s == l / 2 and Pattern.expectHigh(piles[s:]) == l / 2:
-                    if not joking(piles) and not kidding(piles):
+                    if not Pattern.joking(piles) and not Pattern.kidding(piles):
                         hand = Pattern.Straight_x3_n
                 elif s == l / 2 and Pattern.expectHigh_x2(piles[s:]) == l / 2:
-                    if not joking(piles) and not kidding(piles):
+                    if not Pattern.joking(piles) and not Pattern.kidding(piles):
                         hand = Pattern.Straight_x3_2n
 
-        return ( hand, piles )
+        return hand
 
     def expectStraight(piles, count = None):
         ret = 0
@@ -614,13 +706,10 @@ class Pattern:
         if len(piles) == 0:
             return ret
 
-        ret = 1
         n = 1
         for p in piles:
-            if p.count != n:
-                return ret
-
-            ret += 1
+            if p.count == n:
+                ret += 1
 
         return ret
 
@@ -629,13 +718,10 @@ class Pattern:
         if len(piles) == 0:
             return ret
 
-        ret = 1
         n = 2
         for p in piles:
-            if p.count != n:
-                return ret
-
-            ret += 1
+            if p.count == n:
+                ret += 1
 
         return ret
 
@@ -684,8 +770,10 @@ class Pattern:
     def pickQuadruple(board, player, index, holding):
         indexIsGeq = lambda p, c: p.index >= c.index
 
+        handed = board.stack[-1].handed(index)
+
         start = 0
-        if len(board.stack[-1].cards) > 0 and board.stack[-1].hand == Pattern.Quadruple:
+        if len(board.stack[-1].cards) > 0 and handed == Pattern.Quadruple:
             start = Pattern.firstIndexOf(holding, indexIsGeq, board.stack[-1].cards[0])
             if start == -1:
                 start = 0
@@ -697,25 +785,34 @@ class Pattern:
                 continue
 
             indices = [ pile.index ] * 4
-            ( _1, cards ) = player.pick(indices)
-            score = 0 # TODO
+            ( orders, cards, rest ) = player.pick(indices)
+            score = Pattern.priorityOf(cards, rest)
 
-            possibilities.append(( cards, score ))
+            if orders != None and cards != None and score != None:
+                possibilities.append(( orders, cards, score ))
 
         return possibilities
 
     def pickJokers(board, player, index, holding):
-        cards = [ ]
-        index = Points.indexFromName(':)')
+        cards = None
+        orders = None
+        index = Points.nameToIndex(':)')
+        order0 = Pattern.indexOf(player.hand, None, index)
         card0 = Pattern.cardOf(player.hand, None, index)
-        index = Points.indexFromName(':D')
+        index = Points.nameToIndex(':D')
+        order1 = Pattern.indexOf(player.hand, None, index)
         card1 = Pattern.cardOf(player.hand, None, index)
         if card0 != None and card1 != None:
-            cards.append(card0)
-            cards.append(card1)
-        score = 0 # TODO
+            cards = [ card0, card1 ]
+        if order0 != None and order1 != None:
+            orders = [ order0, order1 ]
+        rest = list(filter(lambda c: c != card0 and c != card1, player.hand[:]))
+        score = Pattern.priorityOf(cards, rest)
 
-        return [ ( cards, score ) ]
+        if orders != None and cards != None and score != None:
+            return [ ( orders, cards, score ) ]
+
+        return [ ]
 
     def pickSome(board, player, index, holding, hand):
         if hand == Pattern.Quadruple:
@@ -723,15 +820,21 @@ class Pattern:
         elif hand == Pattern.Jokers:
             return Pattern.pickJokers(board, player, index, holding)
 
-        indexIsGeq = lambda p, c: p.index >= c.index
+        indexIsGt = lambda p, c: p.index > c.index
         indexIsAny = lambda _1, _2: True
+
+        possibilities = [ ]
+
+        handed = board.stack[-1].handed(index)
 
         start = 0
         if len(board.stack[-1].cards) > 0:
-            indexIs = indexIsGeq if board.stack[-1].hand == hand else indexIsAny
+            indexIs = indexIsGt if handed == hand else indexIsAny
             start = Pattern.firstIndexOf(holding, indexIs, board.stack[-1].cards[0])
             if start < 0:
-                start = 0
+                Utils.debug('No key card greater than put')
+
+                return possibilities
 
         pointed = 0
         straight = None
@@ -756,7 +859,7 @@ class Pattern:
             auxiliary = [ 2, 2 ]
         elif hand == Pattern.Straight:
             pointed = 1
-            if board.stack[-1].hand == hand:
+            if handed == hand:
                 straight = len(board.stack[-1].cards)
             else:
                 straight = 5
@@ -764,7 +867,7 @@ class Pattern:
                     straight = range(len(holding), straight - 1, -1)
         elif hand == Pattern.Straight_x2:
             pointed = 2
-            if board.stack[-1].hand == hand:
+            if handed == hand:
                 straight = len(board.stack[-1].cards) / 2
             else:
                 straight = 3
@@ -773,42 +876,48 @@ class Pattern:
                     straight = range(s, straight - 1, -1)
         elif hand == Pattern.Straight_x3:
             pointed = 3
-            if board.stack[-1].hand == hand:
+            if handed == hand:
                 straight = len(board.stack[-1].cards) / 3
             else:
-                straight = 3
+                straight = 2
                 s = len(holding)
                 if s > straight:
                     straight = range(s, straight - 1, -1)
         elif hand == Pattern.Straight_x3_n:
             pointed = 3
-            if board.stack[-1].hand == hand:
+            if handed == hand:
                 straight = len(board.stack[-1].cards) / 4
                 auxiliary = [ 1 ] * len(board.stack[-1].cards) / 4
             else:
-                straight = 3
+                straight = 2
                 s = int(math.ceil(len(holding) * (3 / 4)))
                 if s > straight:
                     straight = range(s, straight - 1, -1)
+                else:
+                    auxiliary = [ 1 ] * straight
         elif hand == Pattern.Straight_x3_2n:
             pointed = 3
-            if board.stack[-1].hand == hand:
+            if handed == hand:
                 straight = len(board.stack[-1].cards) / 5
                 auxiliary = [ 2 ] * len(board.stack[-1].cards) / 5
             else:
-                straight = 3
+                straight = 2
                 s = int(math.ceil(len(holding) * (4 / 5)))
                 if s > straight:
                     straight = range(s, straight - 1, -1)
+                else:
+                    auxiliary = [ 2 ] * straight
 
-        def pick(possibilities, player, indices, auxiliary):
-            cond = lambda c: c.index != Points.Kidding and c.index != Points.Joker0 and c.index != Points.Joker1
-            ( _1, cards ) = player.pick(indices, auxiliary, cond)
-            score = 0 # TODO
+        def pick(possibilities, player, indices, auxiliary, straight):
+            cond = None
+            if straight != None:
+                cond = lambda c: c.index != Points.Kidding and c.index != Points.Joker0 and c.index != Points.Joker1
+            ( orders, cards, rest ) = player.pick(indices, auxiliary, cond)
+            score = Pattern.priorityOf(cards, rest)
 
-            possibilities.append(( cards, score ))
+            if orders != None and cards != None and score != None:
+                possibilities.append(( orders, cards, score ))
 
-        possibilities = [ ]
         for i in range(start, len(holding)):
             pile = holding[i]
             if pile.count < pointed:
@@ -817,20 +926,28 @@ class Pattern:
             if straight == None:
                 indices = [ pile.index ] * pointed
 
-                pick(possibilities, player, indices, auxiliary)
+                pick(possibilities, player, indices, auxiliary, straight)
             elif isinstance(straight, int):
                 indices = [ ]
                 for j in range(0, straight):
                     indices += [ pile.index + j ] * pointed
 
-                pick(possibilities, player, indices, auxiliary)
-            elif isinstance(straight, range):
+                pick(possibilities, player, indices, auxiliary, straight)
+            elif isinstance(straight, list) or isinstance(straight, range):
                 for k in straight:
                     indices = [ ]
                     for j in range(0, k):
                         indices += [ pile.index + j ] * pointed
 
-                    pick(possibilities, player, indices, auxiliary)
+                    was = auxiliary
+                    if hand == Pattern.Straight_x3_n:
+                        auxiliary = [ 1 ] * k
+                    elif hand == Pattern.Straight_x3_2n:
+                        auxiliary = [ 2 ] * k
+
+                    pick(possibilities, player, indices, auxiliary, straight)
+
+                    auxiliary = was
 
         return possibilities
 
@@ -843,11 +960,18 @@ class Put:
         self.cards = [ ]
         self.piles = None
 
-    def piles(self):
+    def piled(self):
         if self.piles == None:
             self.piles = Pile.of(self.cards)
 
         return self.piles
+
+    def handed(self, index):
+        hand = self.hand
+        if hand != Pattern.Invalid and self.owner == index:
+            hand = Pattern.Invalid
+
+        return hand
 
     def dump(self):
         ret = [ ]
@@ -870,6 +994,10 @@ class Writer:
         self.lose = lose or (lambda: Utils.write('Lose'))
 
 class Board:
+    Over = 0
+    Playing = 1
+    Idle = 2
+
     def __init__(self, reader, writer):
         self.reader = reader
         self.writer = writer
@@ -898,15 +1026,15 @@ class Board:
     def clear(self):
         self.times = 1
 
-        del self.players[:]
-        self.players.append(You(self.reader, self.writer))
-        self.players.append(Cpu())
-        self.players.append(Cpu())
+        for p in self.players:
+            p.clear()
 
         del self.reserved[:]
 
         del self.stack[:]
         self.stack.append(Put())
+
+        self.state = None
 
     def shuffle(self):
         random.shuffle(self.deck)
@@ -1004,47 +1132,59 @@ class Board:
 
                 break
 
-        while True:
+        while self.state == 0:
             for i in indices:
                 while True:
                     p = self.players[i]
                     u = [ None, None ]
                     while not p.think(i, self, u):
-                        yield True
+                        yield Board.Idle
 
-                    hrt = self.checkPuttable(u)
-                    if hrt != None and hrt[1] > 0:
-                        Utils.debug('Put orders: ' + str(u[0]))
+                    hrt = self.checkPuttable(u, i)
+                    possible = hrt != None and hrt[1] > 0
+                    done = u[0] != None and u[1] != None
+                    if possible and done:
+                        print(('CPU' if p.isCpu else 'YOU') + '@' + str(i) + ' put cards: ' + Card.namesOf(u[1]))
                         put = Put()
                         put.owner = i
                         put.hand = hrt[0]
                         for j in range(len(u[0])):
-                            k = u[0][j]
                             c = u[1][j]
                             put.cards.append(Card(c.suit, c.index))
                             p.remove(c)
                         self.stack.append(put)
                         self.times *= hrt[2]
 
-                        yield True
+                        yield Board.Playing
+
+                        break
+                    elif possible and not done:
+                        print(('CPU' if p.isCpu else 'YOU') + '@' + str(i) + ' put cards: ' + Card.namesOf(u[1]))
+
+                        yield Board.Playing
 
                         break
                     else:
-                        print('Invalid put orders: ' + str(u[0]) + (' of ' + str(hrt[1])) if hrt != None else '')
+                        print('Invalid put cards: ' + Card.namesOf(u[1]) + (' with relation ' + str(hrt[1])) if hrt != None else '')
 
-                        yield True
+                        yield Board.Playing
 
                 if self.checkGameover():
                     break
 
-            yield True
+        yield Board.Over
 
-        yield False
+    def checkPuttable(self, put, index):
+        if put[0] == None and put[1] == None:
+            return ( Pattern.Invalid, 1, 1 )
 
-    def checkPuttable(self, put):
         curr = Pile.of(put[1])
-        prev = self.stack[-1].piles()
+        prev = self.stack[-1].piled()
         ( hand, rel, times ) = Pattern.compare(curr, prev)
+
+        mine = board.stack[-1].owner == index
+        if mine:
+            rel = 1
 
         return ( hand, rel, times )
 
@@ -1069,15 +1209,17 @@ class Board:
                 for y in self.askStart():
                     yield y
             elif self.state == 1:
+                self.writer.splitter()
+
                 self.writer.win()
 
-                for y in self.askStart():
-                    yield y
+                yield False
             elif self.state == -1:
+                self.writer.splitter()
+
                 self.writer.lose()
 
-                for y in self.askStart():
-                    yield y
+                yield False
             elif self.state == 0:
                 ll = -1
                 for i in range(len(self.players)):
@@ -1091,19 +1233,40 @@ class Board:
                         yield y
                 else:
                     for y in self.askTurns():
-                        self.writer.splitter()
+                        if y == Board.Over:
+                            factor = 10
 
-                        board.output()
+                            winner = self.players[self.lastWinner]
+                            if winner.isLandLord:
+                                loser = list(filter(lambda p: p != winner, self.players))
+                                for p in loser:
+                                    p.score -= self.times * factor
+                                winner.score += (self.times * factor) * 2
+                            else:
+                                for i in range(len(self.players)):
+                                    p = self.players[i]
+                                    if p.isLandLord:
+                                        p.score -= (self.times * factor) * 2
+                                    else:
+                                        p.score += self.times * factor
 
-                        yield y
+                            yield True
+
+                            break
+                        elif y == Board.Playing:
+                            self.writer.splitter()
+
+                            board.output()
+
+                            yield True
+                        elif y == Board.Idle:
+                            yield True
             else:
                 raise Exception('Unknown state')
 
-            yield True
-
     def output(self, players = True, stack = True, reserved = True):
         if reserved:
-            print('[Reserved]')
+            print('[Reserved]' + ' - x' + str(self.times) + ' times')
             lst = [ ]
             for c in self.reserved:
                 lst.append(str(c))
@@ -1117,11 +1280,13 @@ class Board:
         if players:
             print('[Players]')
             for i in range(3):
-                y = 'CPU' if self.players[i].isCpu else 'YOU'
-                z = ' * ' if self.players[i].isLandLord else ' - '
-                v = Pattern.valueOf(self.players[i].hand)
-                msg = y + z + str(self.players[i].dump()) + ' := ' + str(v)
-                if self.players[i].isCpu:
+                p = self.players[i]
+                x = 'CPU' if p.isCpu else 'YOU'
+                y = '[' + str(p.score) + ']'
+                z = ' * ' if p.isLandLord else ' - '
+                v = 0 if len(p.hand) == 0 else Pattern.valueOf(p.hand)
+                msg = x + y + z + str(p.dump()) + ' := ' + str(v)
+                if p.isCpu:
                     Utils.debug(msg)
                 else:
                     print(msg)
@@ -1139,11 +1304,13 @@ def __update__(delta):
     pass
 
 def main():
-    board.shuffle()
-    board.deal()
-    p = board.play()
-    while next(p):
-        pass
+    while True:
+        board.shuffle()
+        board.deal()
+        p = board.play()
+        while next(p):
+            pass
+        board.clear()
 
 if __name__ == '__main__':
     main()
