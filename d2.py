@@ -1250,12 +1250,8 @@ class Board:
     def play(self):
         while True:
             if self.state == None:
-                self.writer.splitter()
-
-                board.output()
-
                 for y in self.askStart():
-                    if self.state == None:
+                    if self.state == None and not y:
                         yield None
 
                     yield y
@@ -1362,16 +1358,308 @@ class Instantly:
 
 board = Board(Reader(), Writer())
 
-# Entries.
+gaming = None
+
+# The entries for co3mos interpretation.
 
 if Utils.isSkulpt:
     import game
 
+class SharedReader:
+    def __init__(self):
+        self.dataStart = None
+        self.dataDemand = None
+
+    def start(self):
+        if self.dataStart == None:
+            return None
+
+        ret = self.dataStart
+        self.dataStart = None
+
+        return ret
+
+    def demand(self):
+        if self.dataDemand == None:
+            return None
+
+        ret = self.dataDemand
+        self.dataDemand = None
+
+        return ret
+
+    def turn(self):
+        pass
+
+class YourWaiter:
+    def __init__(self):
+        self.demanded = None
+
+    def demanding(self):
+        if self.demanded == None:
+            return False
+
+        return self.demanded
+
+    def thinking(self):
+        return False
+
+class CpuWaiter:
+    def __init__(self):
+        self.demanded = None
+
+    def demanding(self):
+        return False
+
+    def thinking(self):
+        return False
+
+class Gaming:
+    Entering = 0
+    Updating = 1
+    Exiting = 2
+    Terminated = 9
+
+    def __init__(self, reader):
+        self.reader = reader
+
+        self.state = Gaming.Entering
+        self.play = None
+
+        self.cursorStart = 0
+        self.cursorDemand = 0
+
+        self.bye = None
+
+    def reset(self):
+        self.cursorStart = 0
+        self.cursorDemand = 0
+
+    def prepare(self):
+        if self.state != Gaming.Entering:
+            return
+
+        print('Prepare...')
+
+        board.players[0].wait = YourWaiter()
+        board.players[1].wait = CpuWaiter()
+        board.players[2].wait = CpuWaiter()
+
+        board.shuffle()
+        board.deal()
+        self.play = board.play()
+
+        self.state = Gaming.Updating
+
+    def finish(self):
+        if self.state != Gaming.Exiting:
+            return
+
+        print('Finish...')
+
+        board.clear()
+
+        if self.state == Gaming.Exiting:
+            if self.play != None:
+                self.state = Gaming.Entering
+            else:
+                self.state = Gaming.Terminated
+
+    def card(self, x, y, card):
+        x0 = x - 5
+        y0 = y - 20
+        x1 = x + 5
+        y1 = y
+        game.rect(x0, y0, x1, y1, game.rgb(255, 255, 255), True)
+        game.rect(x0, y0, x1, y1, game.rgb(80, 80, 80), False)
+        if card == None:
+            game.line(x0, y0, x1, y1, game.rgb(80, 80, 80))
+            game.line(x1, y0, x0, y1, game.rgb(80, 80, 80))
+        elif card == False:
+            game.rect(x0 + 2, y0 + 2, x1 - 2, y1 - 2, game.rgb(80, 80, 80), True)
+        else:
+            col = game.rgb(0, 0, 0)
+            if card.suit == Suits.Hearts or card.suit == Suits.Tiles:
+                col = game.rgb(255, 0, 0)
+            game.text(Points.nameOf(card.index), x0 + 1, y0 + 2, 5, col)
+            game.text(Suits.nameOf(card.suit), x0 + 1, y0 + 7, 5, col)
+
+    def render(self):
+        # Prepare.
+        p = board.players
+
+        # Render the table.
+        y = 117
+        game.text('YOU', 8, y + 3, 5, game.rgb(0, 0, 0))
+        game.text(str(p[0].score) + '万', 20, y + 3, 5, game.rgb(0, 0, 0))
+        if p[0].isLandLord:
+            game.text('地主', 105, y + 3, 5, game.rgb(0, 0, 0))
+        elif p[0].wait.demanded:
+            game.text(str(p[0].demanding) + ' 分', 105, y + 3, 5, game.rgb(0, 0, 0))
+        n = len(p[0].hand)
+        if n == 0:
+            self.card(64, y, None)
+        else:
+            for i in range(n):
+                card = p[0].hand[i]
+                x = 66 + (i - n / 2) * 6
+                self.card(x, y, card)
+
+        y = 63
+        game.text('CPU', 2, y - 26, 5, game.rgb(0, 0, 0))
+        game.text(str(p[1].score) + '万', 2, y - 32, 5, game.rgb(0, 0, 0))
+        if p[1].isLandLord:
+            game.text('地主', 2, y + 2, 5, game.rgb(0, 0, 0))
+        elif p[1].wait.demanded:
+            game.text(str(p[1].demanding) + ' 分', 2, y + 2, 5, game.rgb(0, 0, 0))
+        n = len(p[1].hand)
+        if n == 0:
+            self.card(6, y, None)
+        else:
+            self.card(6, y, False)
+            game.text('x' + str(n), 12, y - 12, 5, game.rgb(0, 0, 0))
+
+        game.text('CPU', 118, y - 26, 5, game.rgb(0, 0, 0))
+        game.text(str(p[2].score) + '万', 114, y - 32, 5, game.rgb(0, 0, 0))
+        if p[2].isLandLord:
+            game.text('地主', 116, y + 2, 5, game.rgb(0, 0, 0))
+        elif p[2].wait.demanded:
+            game.text(str(p[2].demanding) + ' 分', 116, y + 2, 5, game.rgb(0, 0, 0))
+        n = len(p[2].hand)
+        if n == 0:
+            self.card(121, y, None)
+        else:
+            self.card(121, y, False)
+            game.text(str(n) + 'x', 108, y - 12, 5, game.rgb(0, 0, 0))
+
+        y = 22
+        n = len(board.reserved)
+        for i in range(n):
+            card = board.reserved[i]
+            x = 70 + (i - n / 2) * 12
+            self.card(x, y, card)
+
+        game.text('x' + str(board.times), 85, 9, 5, game.rgb(0, 0, 0))
+
+        # Render different states.
+        if self.state == Gaming.Updating:
+            if board.state == None:
+                game.rect(28, 48, 99, 79, game.rgb(255, 255, 255), True)
+                game.rect(28, 48, 99, 79, game.rgb(80, 80, 80))
+                game.text('开始', 59, 58, 5, game.rgb(0, 0, 0))
+                game.text('退出', 59, 68, 5, game.rgb(0, 0, 0))
+                game.text('>', 54, 58 if self.cursorStart == 0 else 68, 5, game.rgb(0, 0, 0))
+            elif board.state == -1:
+                game.rect(28, 48, 99, 79, game.rgb(255, 255, 255), True)
+                game.rect(28, 48, 99, 79, game.rgb(80, 80, 80))
+                game.text('胜败乃兵家常事', 47, 58, 5, game.rgb(0, 0, 0))
+                game.text('确定', 59, 68, 5, game.rgb(0, 0, 0))
+                game.text('>', 54, 68, 5, game.rgb(0, 0, 0))
+            elif board.state == 1:
+                game.rect(28, 48, 99, 79, game.rgb(255, 255, 255), True)
+                game.rect(28, 48, 99, 79, game.rgb(80, 80, 80))
+                game.text('你赢啦！', 54, 58, 5, game.rgb(0, 0, 0))
+                game.text('确定', 59, 68, 5, game.rgb(0, 0, 0))
+                game.text('>', 54, 68, 5, game.rgb(0, 0, 0))
+            elif board.state == 0:
+                if p[0].wait.demanded == None:
+                    y = 52
+                    game.rect(28, 48, 99, 79, game.rgb(255, 255, 255), True)
+                    game.rect(28, 48, 99, 79, game.rgb(80, 80, 80))
+                    game.text('>', 54, y + 6 * self.cursorDemand, 5, game.rgb(0, 0, 0))
+                    game.text('不叫', 59, y, 5, game.rgb(0, 0, 0))
+                    y += 6
+                    game.text('1 分', 59, y, 5, game.rgb(0, 0, 0))
+                    y += 6
+                    game.text('2 分', 59, y, 5, game.rgb(0, 0, 0))
+                    y += 6
+                    game.text('3 分', 59, y, 5, game.rgb(0, 0, 0))
+        elif self.state == Gaming.Terminated:
+            game.rect(28, 48, 99, 79, game.rgb(255, 255, 255), True)
+            game.rect(28, 48, 99, 79, game.rgb(80, 80, 80))
+            game.text(self.bye, 47, 63, 5, game.rgb(0, 0, 0))
+
+    def step(self):
+        p = board.players
+
+        if self.state == Gaming.Updating:
+            if board.state == None:
+                if game.btnp('up'):
+                    self.cursorStart -= 1
+                    if self.cursorStart < 0:
+                        self.cursorStart = 1
+                elif game.btnp('down'):
+                    self.cursorStart += 1
+                    if self.cursorStart > 1:
+                        self.cursorStart = 0
+                elif game.btnp('a') or game.btnp('b'):
+                    self.reader.dataStart = 'y' if self.cursorStart == 0 else 'n'
+                    if self.cursorStart == 1:
+                        byebye = [ '重置以重新开始', '曾经沧海难为水', '除却巫山不是云', '取次花丛懒回顾', '半缘修道半缘君' ]
+                        random.shuffle(byebye)
+                        self.bye = byebye[0]
+            elif board.state == -1:
+                if game.btnp('a') or game.btnp('b'):
+                    pass
+            elif board.state == 1:
+                if game.btnp('a') or game.btnp('b'):
+                    pass
+            elif board.state == 0:
+                if p[0].wait.demanded == None:
+                    if game.btnp('up'):
+                        self.cursorDemand -= 1
+                        if self.cursorDemand < 0:
+                            self.cursorDemand = 3
+                    elif game.btnp('down'):
+                        self.cursorDemand += 1
+                        if self.cursorDemand > 3:
+                            self.cursorDemand = 0
+                    elif game.btnp('a') or game.btnp('b'):
+                        self.reader.dataDemand = self.cursorDemand
+                        p[0].wait.demanded = True
+
+            old = board.state
+            ret = next(self.play)
+            if old != board.state:
+                self.reset()
+
+            return ret
+
+        return True
+
+    def update(self, delta):
+        self.prepare()
+
+        ret = self.step()
+        if ret == None:
+            self.state = Gaming.Exiting
+
+            self.play = None
+        elif ret == False:
+            self.state = Gaming.Exiting
+
+        self.render()
+
+        self.finish()
+
+def __cls__():
+    game.cls(game.rgb(181, 230, 29))
+
 def __init__():
-    pass
+    global board
+    global gaming
+
+    reader = SharedReader()
+    board.reader = reader
+
+    gaming = Gaming(reader)
 
 def __update__(delta):
-    pass
+    global gaming
+
+    gaming.update(delta)
+
+# The entry for direct interpretation.
 
 def main():
     while True:
