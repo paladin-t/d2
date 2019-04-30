@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 #
 # A Python implementaton of the Dou Dizhu deck game
@@ -896,40 +896,40 @@ class Pattern:
                 straight = len(board.stack[-1].cards) / 2
             else:
                 straight = 3
-                s = len(holding)
-                if s > straight:
-                    straight = range(s, straight - 1, -1)
+                most = len(holding)
+                if most > straight:
+                    straight = range(most, straight - 1, -1)
         elif hand == Pattern.Straight_x3:
             pointed = 3
             if handed == hand:
                 straight = len(board.stack[-1].cards) / 3
             else:
                 straight = 2
-                s = len(holding)
-                if s > straight:
-                    straight = range(s, straight - 1, -1)
+                most = len(holding)
+                if most > straight:
+                    straight = range(most, straight - 1, -1)
         elif hand == Pattern.Straight_x3_n:
             pointed = 3
             if handed == hand:
-                straight = len(board.stack[-1].cards) / 4
-                auxiliary = [ 1 ] * (len(board.stack[-1].cards) / 4)
+                straight = int(len(board.stack[-1].cards) / 4)
+                auxiliary = [ 1 ] * straight
             else:
                 straight = 2
-                s = int(math.ceil(len(holding) * (3 / 4)))
-                if s > straight:
-                    straight = range(s, straight - 1, -1)
+                most = int(math.ceil(len(holding) * (3 / 4)))
+                if most > straight:
+                    straight = range(most, straight - 1, -1)
                 else:
                     auxiliary = [ 1 ] * straight
         elif hand == Pattern.Straight_x3_2n:
             pointed = 3
             if handed == hand:
-                straight = len(board.stack[-1].cards) / 5
-                auxiliary = [ 2 ] * (len(board.stack[-1].cards) / 5)
+                straight = int(len(board.stack[-1].cards) / 5)
+                auxiliary = [ 2 ] * straight
             else:
                 straight = 2
-                s = int(math.ceil(len(holding) * (4 / 5)))
-                if s > straight:
-                    straight = range(s, straight - 1, -1)
+                most = int(math.ceil(len(holding) * (4 / 5)))
+                if most > straight:
+                    straight = range(most, straight - 1, -1)
                 else:
                     auxiliary = [ 2 ] * straight
 
@@ -1255,6 +1255,9 @@ class Board:
                 board.output()
 
                 for y in self.askStart():
+                    if self.state == None:
+                        yield None
+
                     yield y
             elif self.state == 1:
                 self.writer.splitter()
@@ -1362,13 +1365,13 @@ board = Board(Reader(), Writer())
 # Entries.
 
 if Utils.isSkulpt:
-    #import game
+    import game
 
-    def __init__():
-        pass
+def __init__():
+    pass
 
-    def __update__(delta):
-        pass
+def __update__(delta):
+    pass
 
 def main():
     while True:
@@ -1379,8 +1382,11 @@ def main():
         board.deal()
 
         p = board.play()
-        while next(p):
-            pass
+        for v in p:
+            if v == None:
+                return
+            elif v == False:
+                break
 
         board.clear()
 
