@@ -22,6 +22,7 @@
 import math
 import random
 import sys
+import time
 
 # Utilities.
 
@@ -45,6 +46,9 @@ class Utils:
 
     def write(msg):
         print(msg)
+
+    def now():
+        return time.time()
 
     def shift(seq, n):
         n = n % len(seq)
@@ -379,7 +383,7 @@ class Cpu(Player):
         self.isCpu = True
 
     def demand(self, index, board, evaluated):
-        if self.wait != None and not self.wait.demanding():
+        if self.wait != None and not self.wait.canDemand():
             return False
 
         d = [ n for n, v in enumerate(evaluated) if v[1] == index ][0]
@@ -391,7 +395,7 @@ class Cpu(Player):
         return True
 
     def think(self, index, board, put):
-        if self.wait != None and not self.wait.thinking():
+        if self.wait != None and not self.wait.canThink():
             return False
 
         handed = board.stack[-1].handed(index)
@@ -427,7 +431,7 @@ class You(Player):
         Player.__init__(self)
 
     def demand(self, index, board, evaluated):
-        if self.wait != None and not self.wait.demanding():
+        if self.wait != None and not self.wait.canDemand():
             return False
 
         d = board.reader.demand()
@@ -447,7 +451,7 @@ class You(Player):
         return True
 
     def think(self, index, board, put):
-        if self.wait != None and not self.wait.thinking():
+        if self.wait != None and not self.wait.canThink():
             return False
 
         handed = board.stack[-1].handed(index)
@@ -893,7 +897,7 @@ class Pattern:
         elif hand == Pattern.Straight_x2:
             pointed = 2
             if handed == hand:
-                straight = len(board.stack[-1].cards) / 2
+                straight = int(len(board.stack[-1].cards) / 2)
             else:
                 straight = 3
                 most = len(holding)
@@ -902,7 +906,7 @@ class Pattern:
         elif hand == Pattern.Straight_x3:
             pointed = 3
             if handed == hand:
-                straight = len(board.stack[-1].cards) / 3
+                straight = int(len(board.stack[-1].cards) / 3)
             else:
                 straight = 2
                 most = len(holding)
@@ -1348,10 +1352,10 @@ class Instantly:
     def __init__(self):
         pass
 
-    def demanding(self):
+    def canDemand(self):
         return True
 
-    def thinking(self):
+    def canThink(self):
         return True
 
 # Variables.
@@ -1395,23 +1399,56 @@ class YourWaiter:
     def __init__(self):
         self.demanded = None
 
-    def demanding(self):
+        self.thinking = None
+
+    def canDemand(self):
         if self.demanded == None:
             return False
 
         return self.demanded
 
-    def thinking(self):
+    def canThink(self):
+        self.thinking = True
+
         return False
 
 class CpuWaiter:
     def __init__(self):
         self.demanded = None
+        self.demandingTimestamp = None
 
-    def demanding(self):
+        self.thinking = None
+        self.thinkingTimestamp = None
+
+    def canDemand(self):
+        duration = 1
+        now = Utils.now()
+        if self.demandingTimestamp == None:
+            self.demandingTimestamp = now
+        diff = now - self.demandingTimestamp
+
+        if diff >= duration:
+            self.demanded = True
+            self.demandingTimestamp = None
+
+            return True
+
         return False
 
-    def thinking(self):
+    def canThink(self):
+        self.thinking = True
+
+        duration = 1
+        now = Utils.now()
+        if self.thinkingTimestamp == None:
+            self.thinkingTimestamp = now
+        diff = now - self.thinkingTimestamp
+
+        if diff >= duration:
+            self.thinkingTimestamp = None
+
+            return True
+
         return False
 
 class Gaming:
@@ -1428,12 +1465,14 @@ class Gaming:
 
         self.cursorStart = 0
         self.cursorDemand = 0
+        self.cursorPick = 0
 
         self.bye = None
 
     def reset(self):
         self.cursorStart = 0
         self.cursorDemand = 0
+        self.cursorPick = 0
 
     def prepare(self):
         if self.state != Gaming.Entering:
@@ -1494,7 +1533,7 @@ class Gaming:
         game.text(str(p[0].score) + '万', 20, y + 3, 5, game.rgb(0, 0, 0))
         if p[0].isLandLord:
             game.text('地主', 105, y + 3, 5, game.rgb(0, 0, 0))
-        elif p[0].wait.demanded:
+        elif not p[0].wait.thinking and p[0].wait.demanded:
             game.text(str(p[0].demanding) + ' 分', 105, y + 3, 5, game.rgb(0, 0, 0))
         n = len(p[0].hand)
         if n == 0:
@@ -1505,12 +1544,12 @@ class Gaming:
                 x = 66 + (i - n / 2) * 6
                 self.card(x, y, card)
 
-        y = 63
+        y = 42
         game.text('CPU', 2, y - 26, 5, game.rgb(0, 0, 0))
         game.text(str(p[1].score) + '万', 2, y - 32, 5, game.rgb(0, 0, 0))
         if p[1].isLandLord:
             game.text('地主', 2, y + 2, 5, game.rgb(0, 0, 0))
-        elif p[1].wait.demanded:
+        elif not p[1].wait.thinking and p[1].wait.demanded:
             game.text(str(p[1].demanding) + ' 分', 2, y + 2, 5, game.rgb(0, 0, 0))
         n = len(p[1].hand)
         if n == 0:
@@ -1523,7 +1562,7 @@ class Gaming:
         game.text(str(p[2].score) + '万', 114, y - 32, 5, game.rgb(0, 0, 0))
         if p[2].isLandLord:
             game.text('地主', 116, y + 2, 5, game.rgb(0, 0, 0))
-        elif p[2].wait.demanded:
+        elif not p[2].wait.thinking and p[2].wait.demanded:
             game.text(str(p[2].demanding) + ' 分', 116, y + 2, 5, game.rgb(0, 0, 0))
         n = len(p[2].hand)
         if n == 0:
@@ -1538,8 +1577,15 @@ class Gaming:
             card = board.reserved[i]
             x = 70 + (i - n / 2) * 12
             self.card(x, y, card)
-
         game.text('x' + str(board.times), 85, 9, 5, game.rgb(0, 0, 0))
+
+        put = board.stack[-1]
+        y = 78
+        n = len(put.cards)
+        for i in range(n):
+            card = put.cards[i]
+            x = 66 + (i - n / 2) * 6
+            self.card(x, y, card)
 
         # Render different states.
         if self.state == Gaming.Updating:
