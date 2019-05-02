@@ -14,6 +14,8 @@ cd d2
 
 It outputs details beneath every process by default, including your opponents' cards, which is useful for debugging. Set `Utils.isDebug` to `False` to disable the spoiling.
 
+Input the card faces separated by spaces directly to make your put, e.g. `8 9 10 j q k a` for `8♠, 9♣, 10♥, J♦, Q♣, K♥, A♦`, `:)` for 🙂 (black joker), `:D` for 😀 (red joker), etc.
+
 ### How it works
 
 The complexity of Dou Dizhu is way far simpler than most chess games. It is possible for the AI to enumerate every valid putting and pick a prior combination according to evaluation and context. The evaluation is pretty rough though, I will leave it to you to explore more possibilities.
