@@ -363,7 +363,7 @@ class Player:
         if n == None:
             return True
 
-        n = list(filter(lambda s: len(s) > 0, n.split(' ')))
+        n = list(filter(lambda s: len(s) > 0, n.split(Put.Separator)))
 
         indices = list(map(lambda name: Points.nameToIndex(name), n))
         if -1 in indices:
@@ -1787,7 +1787,7 @@ class Gaming:
                                     n = ':)'
                                 elif c.index == Points.Joker1:
                                     n = ':D'
-                                cards += n + ' '
+                                cards += n + Put.Separator
                             self.reader.dataTurn = cards
                         else:
                             self.reader.dataTurn = None
