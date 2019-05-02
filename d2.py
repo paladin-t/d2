@@ -1584,8 +1584,8 @@ class Gaming:
             if card.suit == Suits.Hearts or card.suit == Suits.Tiles:
                 col = game.rgb(255, 0, 0)
             dx = 2 if card.suit == Suits.Jokers else 1.5
-            self.ltext(Points.nameOf(card.index), x0 + dx, y0 + 3, 5, col)
-            self.ltext(Suits.nameOf(card.suit), x0 + dx, y0 + 7, 5, col)
+            self.ltext(Points.nameOf(card.index), x0 + dx, y0 + 2, 5, col)
+            self.ltext(Suits.nameOf(card.suit), x0 + dx, y0 + 8, 5, col)
 
     def table(self):
         p = board.players
@@ -1617,7 +1617,7 @@ class Gaming:
                 self.card(x, y + dy, card, a)
 
         y = 42
-        self.ltext('CPU', 118, y - 26)
+        self.ltext('CPU', 117, y - 27)
         self.ltext(str(p[1].score) + '万', 114, y - 32)
         if board.landlord == None:
             self.ltext(str(p[1].demanding) + ' 分', 116, y + 2)
@@ -1635,7 +1635,7 @@ class Gaming:
             self.ltext(str(n) + 'x', 108, y - 12)
 
         y = 42
-        self.ltext('CPU', 2, y - 26)
+        self.ltext('CPU', 2, y - 27)
         self.ltext(str(p[2].score) + '万', 2, y - 32)
         if board.landlord == None:
             self.ltext(str(p[2].demanding) + ' 分', 2, y + 2)
@@ -1660,7 +1660,8 @@ class Gaming:
             if board.state != 0:
                 card = False
             self.card(x, y, card)
-        self.ltext('x' + str(board.times), 85, 9)
+        if board.state == 0:
+            self.ltext('x' + str(board.times), 85, 9)
 
         put = board.stack[-1]
         y = 74
