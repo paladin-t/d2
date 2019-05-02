@@ -30,8 +30,11 @@ class Utils:
     isCPython = 'Python Software Foundation' in sys.copyright
     isSkulpt = 'Scott Graham' in sys.copyright
 
+    isDebug = True
+
     def debug(msg):
-        print(msg)
+        if Utils.isDebug:
+            print(msg)
 
     def read(prompt = None):
         ret = input(prompt)
@@ -157,7 +160,7 @@ class Card:
 
     def __init__(self, s, i):
         self.suit = s
-        self.index = i # Starts from 1.
+        self.index = i # Base 1.
 
     def __str__(self):
         return Points.nameOf(self.index) + Suits.nameOf(self.suit)
@@ -173,7 +176,7 @@ class Card:
 class Player:
     def __init__(self):
         self.isCpu = False
-        self.isLandLord = False
+        self.isLandlord = False
 
         self.hand = [ ]
 
@@ -183,12 +186,16 @@ class Player:
 
         self.wait = None
 
+        self.put = None # None for no put yet, `Pattern.hands` for valid/invalid put, 'Pattern.Passed' for passed.
+
     def clear(self):
-        self.isLandLord = False
+        self.isLandlord = False
 
         del self.hand[:]
 
         self.demanding = 0
+
+        self.put = None
 
         return self
 
@@ -400,7 +407,7 @@ class Cpu(Player):
 
         handed = board.stack[-1].handed(index)
         whose = None if board.stack[-1].owner == None else board.players[board.stack[-1].owner]
-        friendly = not self.isLandLord and (whose != None and not whose.isLandLord)
+        friendly = not self.isLandlord and (whose != None and not whose.isLandlord)
         hyped = len(board.stack[-1].cards) >= 4 or (whose != None and len(whose.hand) <= 2)
         mine = board.stack[-1].owner == index
 
@@ -536,6 +543,8 @@ class Pattern:
     Straight_x3_2n = 532 # n * 3 + n * 2
     Jokers = 6000        # 2
 
+    Passed = 'passed'
+
     Names = {
         Invalid: 'Invalid',
         Single: 'Single',
@@ -582,7 +591,7 @@ class Pattern:
 
         post = len(rest) / 17 * 20000
 
-        total = (hand + value + kidding) + post
+        total = (hand + value + kidding) + post # Calculates the priority.
 
         return total
 
@@ -1050,7 +1059,8 @@ class Board:
         self.stack = [ Put() ]
 
         self.state = None # None for not started, 1 for won, -1 for lost, 0 for playing.
-        self.lastWinner = None # None for literally none, numbers for winner's index.
+        self.landlord = None # None for literally none, numbers for landlord's index.
+        self.winner = None # None for literally none, numbers for winner's index.
 
     def clear(self):
         self.times = 1
@@ -1064,6 +1074,7 @@ class Board:
         self.stack.append(Put())
 
         self.state = None
+        self.landlord = None
 
     def shuffle(self):
         random.shuffle(self.deck)
@@ -1141,8 +1152,9 @@ class Board:
                 if self.players[i].demanding < m:
                     del indices[j]
 
+        self.landlord = indices[0]
         p = self.players[indices[0]]
-        p.isLandLord = True
+        p.isLandlord = True
         for c in self.reserved:
             p.add(c)
         p.sort()
@@ -1156,7 +1168,7 @@ class Board:
             indices.append(i)
         for i in range(len(self.players)):
             p = self.players[i]
-            if p.isLandLord:
+            if p.isLandlord:
                 indices = Utils.shift(indices, i)
 
                 break
@@ -1184,17 +1196,23 @@ class Board:
                         self.stack.append(put)
                         self.times *= hrt[2]
 
+                        p.put = hrt[0]
+
                         yield Board.Playing
 
                         break
                     elif possible and not done:
                         print(('CPU' if p.isCpu else 'YOU') + '@' + str(i) + ' put cards: ' + Card.namesOf(u[1]))
 
+                        p.put = Pattern.Passed
+
                         yield Board.Playing
 
                         break
                     else:
                         print('Invalid put cards: ' + Card.namesOf(u[1]) + (' with relation ' + str(hrt[1])) if hrt != None else '')
+
+                        p.put = Pattern.Invalid
 
                         yield Board.Playing
 
@@ -1223,9 +1241,9 @@ class Board:
             if len(p.hand) > 0:
                 continue
 
-            self.lastWinner = i
+            self.winner = i
 
-            if p.isLandLord:
+            if p.isLandlord:
                 self.state = -1 if p.isCpu else 1
 
                 return True
@@ -1240,7 +1258,7 @@ class Board:
                         continue
 
                     q = self.players[j]
-                    if q.isLandLord:
+                    if q.isLandlord:
                         continue
 
                     self.state = -1 if q.isCpu else 1
@@ -1276,14 +1294,7 @@ class Board:
 
                 board.output()
 
-                ll = -1
-                for i in range(len(self.players)):
-                    if self.players[i].isLandLord:
-                        ll = i
-
-                        break
-
-                if ll == -1:
+                if self.landlord == None:
                     for y in self.askDemand():
                         yield y
                 else:
@@ -1291,8 +1302,8 @@ class Board:
                         if y == Board.Over:
                             factor = 10
 
-                            winner = self.players[self.lastWinner]
-                            if winner.isLandLord:
+                            winner = self.players[self.winner]
+                            if winner.isLandlord:
                                 loser = list(filter(lambda p: p != winner, self.players))
                                 for p in loser:
                                     p.score -= self.times * factor
@@ -1300,7 +1311,7 @@ class Board:
                             else:
                                 for i in range(len(self.players)):
                                     p = self.players[i]
-                                    if p.isLandLord:
+                                    if p.isLandlord:
                                         p.score -= (self.times * factor) * 2
                                     else:
                                         p.score += self.times * factor
@@ -1340,7 +1351,7 @@ class Board:
                 p = self.players[i]
                 x = 'CPU' if p.isCpu else 'YOU'
                 y = '[' + str(p.score) + ']'
-                z = ' * ' if p.isLandLord else ' - '
+                z = ' * ' if p.isLandlord else ' - '
                 v = 0 if len(p.hand) == 0 else Pattern.valueOf(p.hand)
                 msg = x + y + z + str(p.dump()) + ' := ' + str(v)
                 if p.isCpu:
@@ -1364,7 +1375,7 @@ board = Board(Reader(), Writer())
 
 gaming = None
 
-# The entries for co3mos interpretation.
+# The entries for graphical interpretation.
 
 if Utils.isSkulpt:
     import game
@@ -1373,6 +1384,7 @@ class SharedReader:
     def __init__(self):
         self.dataStart = None
         self.dataDemand = None
+        self.dataTurn = None
 
     def start(self):
         if self.dataStart == None:
@@ -1392,14 +1404,21 @@ class SharedReader:
 
         return ret
 
-    def turn(self):
-        pass
+    def turn(self, _1):
+        if self.dataTurn == None:
+            return None
+
+        ret = self.dataTurn
+        self.dataTurn = None
+
+        return ret
 
 class YourWaiter:
     def __init__(self):
         self.demanded = None
 
         self.thinking = None
+        self.thought = None
 
     def canDemand(self):
         if self.demanded == None:
@@ -1410,7 +1429,13 @@ class YourWaiter:
     def canThink(self):
         self.thinking = True
 
-        return False
+        if self.thought == None:
+            return False
+        else:
+            self.thinking = None
+            self.thought = None
+
+            return True
 
 class CpuWaiter:
     def __init__(self):
@@ -1438,13 +1463,14 @@ class CpuWaiter:
     def canThink(self):
         self.thinking = True
 
-        duration = 1
+        duration = 1.75
         now = Utils.now()
         if self.thinkingTimestamp == None:
             self.thinkingTimestamp = now
         diff = now - self.thinkingTimestamp
 
         if diff >= duration:
+            self.thinking = None
             self.thinkingTimestamp = None
 
             return True
@@ -1455,6 +1481,7 @@ class Gaming:
     Entering = 0
     Updating = 1
     Exiting = 2
+    Over = 8
     Terminated = 9
 
     def __init__(self, reader):
@@ -1465,14 +1492,20 @@ class Gaming:
 
         self.cursorStart = 0
         self.cursorDemand = 0
+        self.cursorOperate = 0
         self.cursorPick = 0
+
+        self.picked = [ ]
 
         self.bye = None
 
     def reset(self):
         self.cursorStart = 0
         self.cursorDemand = 0
+        self.cursorOperate = 0
         self.cursorPick = 0
+
+        del self.picked[:]
 
     def prepare(self):
         if self.state != Gaming.Entering:
@@ -1504,13 +1537,43 @@ class Gaming:
             else:
                 self.state = Gaming.Terminated
 
-    def card(self, x, y, card):
+    def togglePicked(self, index):
+        while len(self.picked) < index + 1:
+            self.picked.append(False)
+        self.picked[index] = not self.picked[index]
+
+    def isPicked(self, index):
+        if index < 0 or index >= len(self.picked):
+            return False;
+
+        return self.picked[index]
+
+    def clearPicked(self):
+        self.cursorOperate = 0
+        self.cursorPick = 0
+        del self.picked[:]
+
+    def ltext(self, txt, x, y, size = 5, col = None):
+        game.text(txt, x, y, size, col if col != None else game.rgb(0, 0, 0))
+
+    def button(self, txt, x, y, w, h, highlight = False):
+        game.rect(x, y, w, h, game.rgb(255, 255, 255), True)
+        if highlight:
+            game.rect(x, y, w, h, game.rgb(255, 80, 80))
+        else:
+            game.rect(x, y, w, h, game.rgb(80, 80, 80))
+        game.text(txt, x + 9, y + 4, 5, game.rgb(0, 0, 0))
+
+    def card(self, x, y, card, highlight = False):
         x0 = x - 5
         y0 = y - 20
         x1 = x + 5
         y1 = y
         game.rect(x0, y0, x1, y1, game.rgb(255, 255, 255), True)
-        game.rect(x0, y0, x1, y1, game.rgb(80, 80, 80), False)
+        if highlight:
+            game.rect(x0, y0, x1, y1, game.rgb(255, 80, 80), False)
+        else:
+            game.rect(x0, y0, x1, y1, game.rgb(80, 80, 80), False)
         if card == None:
             game.line(x0, y0, x1, y1, game.rgb(80, 80, 80))
             game.line(x1, y0, x0, y1, game.rgb(80, 80, 80))
@@ -1520,21 +1583,26 @@ class Gaming:
             col = game.rgb(0, 0, 0)
             if card.suit == Suits.Hearts or card.suit == Suits.Tiles:
                 col = game.rgb(255, 0, 0)
-            game.text(Points.nameOf(card.index), x0 + 1, y0 + 2, 5, col)
-            game.text(Suits.nameOf(card.suit), x0 + 1, y0 + 7, 5, col)
+            dx = 2 if card.suit == Suits.Jokers else 1.5
+            self.ltext(Points.nameOf(card.index), x0 + dx, y0 + 3, 5, col)
+            self.ltext(Suits.nameOf(card.suit), x0 + dx, y0 + 7, 5, col)
 
-    def render(self):
-        # Prepare.
+    def table(self):
         p = board.players
 
-        # Render the table.
         y = 117
-        game.text('YOU', 8, y + 3, 5, game.rgb(0, 0, 0))
-        game.text(str(p[0].score) + '万', 20, y + 3, 5, game.rgb(0, 0, 0))
-        if p[0].isLandLord:
-            game.text('地主', 105, y + 3, 5, game.rgb(0, 0, 0))
-        elif not p[0].wait.thinking and p[0].wait.demanded:
-            game.text(str(p[0].demanding) + ' 分', 105, y + 3, 5, game.rgb(0, 0, 0))
+        self.ltext('YOU', 8, y + 3)
+        self.ltext(str(p[0].score) + '万', 20, y + 3)
+        if board.landlord == None:
+            self.ltext(str(p[0].demanding) + ' 分', 105, y + 3)
+        elif p[0].isLandlord:
+            self.ltext('地主', 105, y + 3)
+        if p[0].put == None:
+            pass
+        elif p[0].put == Pattern.Passed:
+            self.ltext('不出', 90, y + 3)
+        elif p[0].put == Pattern.Invalid:
+            self.ltext('无效', 90, y + 3)
         n = len(p[0].hand)
         if n == 0:
             self.card(64, y, None)
@@ -1542,88 +1610,110 @@ class Gaming:
             for i in range(n):
                 card = p[0].hand[i]
                 x = 66 + (i - n / 2) * 6
-                self.card(x, y, card)
+                dy = -2 if self.isPicked(i) else 0
+                a = p[0].wait.thinking and self.cursorOperate == 0 and self.cursorPick == i
+                if board.state != 0:
+                    card = False
+                self.card(x, y + dy, card, a)
 
         y = 42
-        game.text('CPU', 2, y - 26, 5, game.rgb(0, 0, 0))
-        game.text(str(p[1].score) + '万', 2, y - 32, 5, game.rgb(0, 0, 0))
-        if p[1].isLandLord:
-            game.text('地主', 2, y + 2, 5, game.rgb(0, 0, 0))
-        elif not p[1].wait.thinking and p[1].wait.demanded:
-            game.text(str(p[1].demanding) + ' 分', 2, y + 2, 5, game.rgb(0, 0, 0))
+        self.ltext('CPU', 118, y - 26)
+        self.ltext(str(p[1].score) + '万', 114, y - 32)
+        if board.landlord == None:
+            self.ltext(str(p[1].demanding) + ' 分', 116, y + 2)
+        elif p[1].isLandlord:
+            self.ltext('地主', 116, y + 2)
+        if p[1].put == None:
+            pass
+        elif p[1].put == Pattern.Passed:
+            self.ltext('不出', 116, y + 8)
         n = len(p[1].hand)
-        if n == 0:
-            self.card(6, y, None)
-        else:
-            self.card(6, y, False)
-            game.text('x' + str(n), 12, y - 12, 5, game.rgb(0, 0, 0))
-
-        game.text('CPU', 118, y - 26, 5, game.rgb(0, 0, 0))
-        game.text(str(p[2].score) + '万', 114, y - 32, 5, game.rgb(0, 0, 0))
-        if p[2].isLandLord:
-            game.text('地主', 116, y + 2, 5, game.rgb(0, 0, 0))
-        elif not p[2].wait.thinking and p[2].wait.demanded:
-            game.text(str(p[2].demanding) + ' 分', 116, y + 2, 5, game.rgb(0, 0, 0))
-        n = len(p[2].hand)
         if n == 0:
             self.card(121, y, None)
         else:
             self.card(121, y, False)
-            game.text(str(n) + 'x', 108, y - 12, 5, game.rgb(0, 0, 0))
+            self.ltext(str(n) + 'x', 108, y - 12)
+
+        y = 42
+        self.ltext('CPU', 2, y - 26)
+        self.ltext(str(p[2].score) + '万', 2, y - 32)
+        if board.landlord == None:
+            self.ltext(str(p[2].demanding) + ' 分', 2, y + 2)
+        elif p[2].isLandlord:
+            self.ltext('地主', 2, y + 2)
+        if p[2].put == None:
+            pass
+        elif p[2].put == Pattern.Passed:
+            self.ltext('不出', 2, y + 8)
+        n = len(p[2].hand)
+        if n == 0:
+            self.card(6, y, None)
+        else:
+            self.card(6, y, False)
+            self.ltext('x' + str(n), 12, y - 12)
 
         y = 22
         n = len(board.reserved)
         for i in range(n):
             card = board.reserved[i]
             x = 70 + (i - n / 2) * 12
+            if board.state != 0:
+                card = False
             self.card(x, y, card)
-        game.text('x' + str(board.times), 85, 9, 5, game.rgb(0, 0, 0))
+        self.ltext('x' + str(board.times), 85, 9)
 
         put = board.stack[-1]
-        y = 78
+        y = 74
         n = len(put.cards)
         for i in range(n):
             card = put.cards[i]
             x = 66 + (i - n / 2) * 6
             self.card(x, y, card)
 
-        # Render different states.
+    def render(self):
+        p = board.players
+
+        self.table()
+
         if self.state == Gaming.Updating:
             if board.state == None:
                 game.rect(28, 48, 99, 79, game.rgb(255, 255, 255), True)
                 game.rect(28, 48, 99, 79, game.rgb(80, 80, 80))
-                game.text('开始', 59, 58, 5, game.rgb(0, 0, 0))
-                game.text('退出', 59, 68, 5, game.rgb(0, 0, 0))
-                game.text('>', 54, 58 if self.cursorStart == 0 else 68, 5, game.rgb(0, 0, 0))
-            elif board.state == -1:
+                self.ltext('开始', 59, 58)
+                self.ltext('退出', 59, 68)
+                self.ltext('>', 54, 58 if self.cursorStart == 0 else 68)
+            elif board.state == 0 and board.landlord == None and p[0].wait.demanded == None:
+                y = 52
                 game.rect(28, 48, 99, 79, game.rgb(255, 255, 255), True)
                 game.rect(28, 48, 99, 79, game.rgb(80, 80, 80))
-                game.text('胜败乃兵家常事', 47, 58, 5, game.rgb(0, 0, 0))
-                game.text('确定', 59, 68, 5, game.rgb(0, 0, 0))
-                game.text('>', 54, 68, 5, game.rgb(0, 0, 0))
+                self.ltext('>', 54, y + 6 * self.cursorDemand)
+                self.ltext('不叫', 59, y)
+                y += 6
+                self.ltext('1 分', 59, y)
+                y += 6
+                self.ltext('2 分', 59, y)
+                y += 6
+                self.ltext('3 分', 59, y)
+            elif board.state == 0 and p[0].wait.thinking:
+                self.button('不出', 32, 79, 60, 91, self.cursorOperate == 1)
+                self.button('出牌', 68, 79, 96, 91, self.cursorOperate == 2)
+        elif self.state == Gaming.Over:
+            if board.state == -1:
+                game.rect(28, 48, 99, 79, game.rgb(255, 255, 255), True)
+                game.rect(28, 48, 99, 79, game.rgb(80, 80, 80))
+                self.ltext('胜败乃兵家常事', 47, 58)
+                self.ltext('确定', 59, 68)
+                self.ltext('>', 54, 68)
             elif board.state == 1:
                 game.rect(28, 48, 99, 79, game.rgb(255, 255, 255), True)
                 game.rect(28, 48, 99, 79, game.rgb(80, 80, 80))
-                game.text('你赢啦！', 54, 58, 5, game.rgb(0, 0, 0))
-                game.text('确定', 59, 68, 5, game.rgb(0, 0, 0))
-                game.text('>', 54, 68, 5, game.rgb(0, 0, 0))
-            elif board.state == 0:
-                if p[0].wait.demanded == None:
-                    y = 52
-                    game.rect(28, 48, 99, 79, game.rgb(255, 255, 255), True)
-                    game.rect(28, 48, 99, 79, game.rgb(80, 80, 80))
-                    game.text('>', 54, y + 6 * self.cursorDemand, 5, game.rgb(0, 0, 0))
-                    game.text('不叫', 59, y, 5, game.rgb(0, 0, 0))
-                    y += 6
-                    game.text('1 分', 59, y, 5, game.rgb(0, 0, 0))
-                    y += 6
-                    game.text('2 分', 59, y, 5, game.rgb(0, 0, 0))
-                    y += 6
-                    game.text('3 分', 59, y, 5, game.rgb(0, 0, 0))
+                self.ltext('你赢啦！', 54, 58)
+                self.ltext('确定', 59, 68)
+                self.ltext('>', 54, 68)
         elif self.state == Gaming.Terminated:
             game.rect(28, 48, 99, 79, game.rgb(255, 255, 255), True)
             game.rect(28, 48, 99, 79, game.rgb(80, 80, 80))
-            game.text(self.bye, 47, 63, 5, game.rgb(0, 0, 0))
+            self.ltext(self.bye, 47, 63)
 
     def step(self):
         p = board.players
@@ -1644,25 +1734,64 @@ class Gaming:
                         byebye = [ '重置以重新开始', '曾经沧海难为水', '除却巫山不是云', '取次花丛懒回顾', '半缘修道半缘君' ]
                         random.shuffle(byebye)
                         self.bye = byebye[0]
-            elif board.state == -1:
-                if game.btnp('a') or game.btnp('b'):
-                    pass
-            elif board.state == 1:
-                if game.btnp('a') or game.btnp('b'):
-                    pass
-            elif board.state == 0:
-                if p[0].wait.demanded == None:
-                    if game.btnp('up'):
-                        self.cursorDemand -= 1
-                        if self.cursorDemand < 0:
-                            self.cursorDemand = 3
+            elif board.state == 0 and board.landlord == None and p[0].wait.demanded == None:
+                if game.btnp('up'):
+                    self.cursorDemand -= 1
+                    if self.cursorDemand < 0:
+                        self.cursorDemand = 3
+                elif game.btnp('down'):
+                    self.cursorDemand += 1
+                    if self.cursorDemand > 3:
+                        self.cursorDemand = 0
+                elif game.btnp('a') or game.btnp('b'):
+                    self.reader.dataDemand = self.cursorDemand
+                    p[0].wait.demanded = True
+            elif board.state == 0 and p[0].wait.thinking:
+                if self.cursorOperate == 0:
+                    if game.btnp('left'):
+                        self.cursorPick -= 1
+                        if self.cursorPick < 0:
+                            self.cursorPick = len(p[0].hand) - 1
+                    elif game.btnp('right'):
+                        self.cursorPick += 1
+                        if self.cursorPick >= len(p[0].hand):
+                            self.cursorPick = 0
+                    elif game.btnp('up'):
+                        self.cursorOperate = 2
                     elif game.btnp('down'):
-                        self.cursorDemand += 1
-                        if self.cursorDemand > 3:
-                            self.cursorDemand = 0
+                        self.cursorOperate = 1
                     elif game.btnp('a') or game.btnp('b'):
-                        self.reader.dataDemand = self.cursorDemand
-                        p[0].wait.demanded = True
+                        self.togglePicked(self.cursorPick)
+                else:
+                    if game.btnp('left'):
+                        self.cursorOperate -= 1
+                        if self.cursorOperate < 0:
+                            self.cursorOperate = 0
+                    elif game.btnp('right'):
+                        self.cursorOperate += 1
+                        if self.cursorOperate > 2:
+                            self.cursorOperate = 0
+                    elif game.btnp('up') or game.btnp('down'):
+                        self.cursorOperate = 0
+                    elif game.btnp('a') or game.btnp('b'):
+                        if self.cursorOperate == 2:
+                            cards = ''
+                            for i in range(len(self.picked)):
+                                if not self.picked[i]:
+                                    continue
+
+                                c = p[0].hand[i]
+                                n = Points.nameOf(c.index)
+                                if c.index == Points.Joker0:
+                                    n = ':)'
+                                elif c.index == Points.Joker1:
+                                    n = ':D'
+                                cards += n + ' '
+                            self.reader.dataTurn = cards
+                        else:
+                            self.reader.dataTurn = None
+                        p[0].wait.thought = True
+                        self.clearPicked()
 
             old = board.state
             ret = next(self.play)
@@ -1670,6 +1799,17 @@ class Gaming:
                 self.reset()
 
             return ret
+        elif self.state == Gaming.Over:
+            if board.state == -1:
+                if game.btnp('a') or game.btnp('b'):
+                    self.state == Gaming.Exiting
+
+                    return False
+            elif board.state == 1:
+                if game.btnp('a') or game.btnp('b'):
+                    self.state == Gaming.Exiting
+
+                    return False
 
         return True
 
@@ -1682,7 +1822,10 @@ class Gaming:
 
             self.play = None
         elif ret == False:
-            self.state = Gaming.Exiting
+            if self.state == Gaming.Over:
+                self.state = Gaming.Exiting
+            else:
+                self.state = Gaming.Over
 
         self.render()
 
